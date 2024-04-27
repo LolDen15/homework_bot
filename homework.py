@@ -5,7 +5,7 @@ import time
 from http import HTTPStatus
 
 import requests
-import telegram
+import telebot
 from dotenv import load_dotenv
 
 from exceptions import APIError, TokenNotFound
@@ -102,9 +102,10 @@ def main():
 
     check_tokens()
 
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    # bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
-    status = '1qwe'
+    status = ''
 
     while True:
         try:
@@ -114,23 +115,23 @@ def main():
             last_work = response['homeworks'][0]
             message = parse_status(last_work)
             send_message(bot, message)
-
         except IndexError:
             message = 'Статус не поменялся'
             if str(status) != str(message):
+                logging.error(message)
                 send_message(bot, message)
-            logging.info(message)
+
             status = message
 
-        except telegram.error.TelegramError as error:
+        except telebot.apihelper.ApiTelegramException as error:
             message = f'Ошибка отправки сообщения: {error}'
             logging.error(message)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             if str(status) != str(message):
+                logging.error(message)
                 send_message(bot, message)
-            logging.error(message)
 
         finally:
             time.sleep(RETRY_PERIOD)
