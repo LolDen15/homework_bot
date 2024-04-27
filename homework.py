@@ -38,7 +38,7 @@ def check_tokens():
     ]
     if missing_tokens:
         log_message = (
-            'Отсутсвует переменная окружения', ' '.join(missing_tokens)
+            f'Отсутствует переменная окружения{", ".join(missing_tokens)}'
         )
         logging.critical(log_message)
         raise TokenNotFound(log_message)
@@ -112,20 +112,16 @@ def main():
     while True:
         try:
             response = get_api_answer(timestamp)
-            timestamp = int(time.time())
             check_response(response)
-            last_work = ''
             if 'homeworks' in response:
                 last_work = response['homeworks'][0]
-            message = parse_status(last_work)
-            if last_message != message:
-                send_message(bot, message)
-        except IndexError:
-            message = 'Статус не поменялся'
-            if last_message != message:
-                logging.error(message)
-                last_message = message
-
+                message = parse_status(last_work)
+                if last_message != message:
+                    send_message(bot, message)
+                    last_message = message
+            else:
+                logging.info('Cтатус проекта не обновился')
+            timestamp = int(response.get('current_date', time.time()))
         except telebot.apihelper.ApiTelegramException as error:
             logging.error(f'Ошибка отправки сообщения: {error}')
 
@@ -135,7 +131,7 @@ def main():
             if last_message != message:
                 with suppress(Exception):
                     send_message(bot, message)
-                last_message = message
+                    last_message = message
         finally:
             time.sleep(RETRY_PERIOD)
 
