@@ -114,11 +114,12 @@ def main():
             response = get_api_answer(timestamp)
             check_response(response)
             if 'homeworks' in response:
-                last_work = response['homeworks'][0]
-                message = parse_status(last_work)
-                if last_message != message:
-                    send_message(bot, message)
-                    last_message = message
+                last_work = response['homeworks']
+                if last_work:
+                    message = parse_status(last_work[0])
+                    if last_message != message:
+                        send_message(bot, message)
+                        last_message = message
             else:
                 logging.info('Cтатус проекта не обновился')
             timestamp = int(response.get('current_date', time.time()))
