@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from contextlib import suppress
 from http import HTTPStatus
 
 import requests
@@ -33,13 +34,14 @@ def check_tokens():
     logging.info('Начало проверки токенов')
     all_tokens = ['PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID']
     missing_tokens = [
-        name for name in all_tokens if globals().get(name) in [None, '']
+        name for name in all_tokens if not globals().get(name)
     ]
-    if any(missing_tokens):
-        logging.critical(f'Отсутсвует переменная окружения {missing_tokens}')
-        raise TokenNotFound(
-            f'Отсутсвует переменная окружения {missing_tokens}'
+    if missing_tokens:
+        log_message = (
+            'Отсутсвует переменная окружения', ' '.join(missing_tokens)
         )
+        logging.critical(log_message)
+        raise TokenNotFound(log_message)
     logging.info('Токены проверены')
 
 
@@ -52,12 +54,12 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Проверка запроса к API."""
-    logging.info('Получение ответа от API')
+    logging.debug('Получение ответа от API')
     params = {'from_date': timestamp}
     try:
         response = requests.get(url=ENDPOINT, headers=HEADERS, params=params)
-    except requests.RequestException:
-        raise APIError('Не удалось выполнить запрос к API.')
+    except requests.RequestException as error:
+        raise APIError(f'Ошибка: {error}')
     if response.status_code != HTTPStatus.OK:
         raise APIError(f'Статус запроса к API: {response.status_code}')
     logging.info('Запрос к API прошёл успешно!')
@@ -69,13 +71,13 @@ def check_response(response):
     """Проверка ответа от API."""
     logging.info('Начало проверки ответа API')
     if not isinstance(response, dict):
-        raise TypeError(f'Ответ API не является "dict". '
+        raise TypeError('Ответ API не является "dict". '
                         f'Ответ API является {type(response)}')
     if 'homeworks' not in response:
-        raise KeyError('Ответ API не содержит список проектов')
+        raise KeyError('Ответ API не содержит список проектов "homeworks"')
     if not isinstance(response.get('homeworks'), list):
-        raise TypeError(f'Список проектов не является "list". '
-                        f'Список проектов является '
+        raise TypeError('Список проектов не является "list". '
+                        'Список проектов является '
                         f'{type(response.get("homeworks"))}')
     logging.info('Проверка ответа API прошла успешно!')
 
@@ -90,7 +92,8 @@ def parse_status(homework):
     if not homework_name:
         raise KeyError('Не найдено имя проекта в ответе API')
     if homework_status not in HOMEWORK_VERDICTS:
-        raise ValueError('Не найден статус последнего проекта')
+        raise ValueError('Не найден статус последнего проекта:'
+                         f' {homework_status}')
     verdict = HOMEWORK_VERDICTS[homework_status]
     logging.info('Проверка статуса проекта успешна!')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
@@ -102,47 +105,45 @@ def main():
 
     check_tokens()
 
-    # bot = telegram.Bot(token=TELEGRAM_TOKEN)
     bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
-    status = ''
+    last_message = ''
 
     while True:
         try:
             response = get_api_answer(timestamp)
             timestamp = int(time.time())
             check_response(response)
-            last_work = response['homeworks'][0]
+            last_work = ''
+            if 'homeworks' in response:
+                last_work = response['homeworks'][0]
             message = parse_status(last_work)
-            send_message(bot, message)
+            if last_message != message:
+                send_message(bot, message)
         except IndexError:
             message = 'Статус не поменялся'
-            if str(status) != str(message):
+            if last_message != message:
                 logging.error(message)
-                send_message(bot, message)
-
-            status = message
+                last_message = message
 
         except telebot.apihelper.ApiTelegramException as error:
-            message = f'Ошибка отправки сообщения: {error}'
-            logging.error(message)
+            logging.error(f'Ошибка отправки сообщения: {error}')
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            if str(status) != str(message):
-                logging.error(message)
-                send_message(bot, message)
-
+            logging.error(message, exc_info=True)
+            if last_message != message:
+                with suppress(Exception):
+                    send_message(bot, message)
+                last_message = message
         finally:
             time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
     logging.basicConfig(
+        handlers=[logging.StreamHandler(sys.stdout)],
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.DEBUG
     )
-    logger = logging.getLogger(__name__)
-    handler = logging.StreamHandler(sys.stdout)
-    logger.addHandler(handler)
     main()
